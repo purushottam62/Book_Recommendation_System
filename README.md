@@ -25,7 +25,7 @@ The system intelligently recommends books based on user interaction sequences an
 |------|------|--------------|-----------|
 | ⭐ **Team Leader & ML Analyst (Backend)** | **Atul Kumar Pandey** | 23074006 | [Atul625-py](https://github.com/Atul625-py) |
 | 🤝 **Frontend & Backend Developer** | **Chukka Chamantej** | 23074028 | [Chamantej](https://github.com/Chamantej) |
-| 🎨 **Frontend Engineer** | **Purushottam Lal** | 23075061 | [Purushottam620xyz](https://github.com/Purushottam620xyz) |
+| 🎨 **Frontend & Backend Developer** | **Purushottam Lal** | 23075061 | [Purushottam620xyz](https://github.com/Purushottam620xyz) |
 
 ## 📈 Model Summary (STAMP)
 STAMP (Short-Term Attention/Memory Priority) captures both **short-term interests** and **long-term preferences** of users.  
