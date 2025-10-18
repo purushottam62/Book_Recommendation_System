@@ -1,7 +1,18 @@
+import os, sys
 import torch
 from collections import defaultdict, deque
+
+# --------------------------------------------------------
+# Set up Django environment so this file can access models
+# --------------------------------------------------------
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../backend')))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+
+import django
+django.setup()
+
+from backend_app.models import User, Book, Rating
 from django.db import transaction
-from .models import User, Book, Rating
 
 # ----------------------------------------------------------------
 # GLOBALS (cache-like structures, not DB)
@@ -115,14 +126,19 @@ def handle_new_user(user_id, age=None, location=None):
 
 
 @transaction.atomic
-def handle_new_book(book_isbn, title=None, author=None, genre=None):
-    """Add new book to DB + update in-memory mapping."""
+def handle_new_book(book_isbn, book_title=None, book_author=None,
+                    year_of_publication=None, publisher=None,
+                    image_url_s=None, image_url_m=None, image_url_l=None):
     book, created = Book.objects.get_or_create(
         book_isbn=book_isbn,
-        defaults={"title": title or "", "author": author or "", "genre": genre or ""}
+        defaults={
+            "book_title": book_title or "",
+            "book_author": book_author or "",
+            "year_of_publication": year_of_publication,
+            "publisher": publisher or "",
+            "image_url_s": image_url_s or "",
+            "image_url_m": image_url_m or "",
+            "image_url_l": image_url_l or "",
+        }
     )
-    if created:
-        new_idx = len(book_index)
-        book_index[book_isbn] = new_idx
-        index_book[new_idx] = book_isbn
     return {"status": "ok", "message": f"Book {book_isbn} {'added' if created else 'already exists'}."}

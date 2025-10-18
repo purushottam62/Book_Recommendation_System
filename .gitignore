@@ -134,6 +134,8 @@ dist/
 .env.*.local
 .local.env
 .envrc
+.venv 
+venv
 
 # Testing
 coverage/
