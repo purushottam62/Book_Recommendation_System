@@ -20,7 +20,7 @@ const HomePage = () => {
 
       try {
         // 1️⃣ Fetch recommended ISBNs
-        const res = await axios.get(`/api/model/recommend/${userId}/?top_k=5`, {
+        const res = await axios.get(`/api/model/recommend/${userId}/?top_k=20`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -187,7 +187,7 @@ const HomePage = () => {
                 <input
                   type="number"
                   min={1}
-                  max={5}
+                  max={10}
                   step={0.1}
                   value={rating}
                   onChange={(e) => setRating(parseFloat(e.target.value))}

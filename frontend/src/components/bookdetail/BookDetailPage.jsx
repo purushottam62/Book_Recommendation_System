@@ -32,8 +32,9 @@ const BookDetailPage = () => {
         );
 
         const userRating = resRating.data.rating;
-        // Only show rating if it's valid, otherwise 0
-        setRating(userRating !== 3.14 ? userRating : 0);
+
+        // Only show rating if valid (ignore 3.14 or 7.14)
+        setRating(userRating !== 3.14 && userRating !== 7.14 ? userRating : 0);
       } catch (err) {
         console.error("Error fetching book or rating:", err);
       } finally {
@@ -67,10 +68,10 @@ const BookDetailPage = () => {
   if (loading) return <p style={{ padding: "20px" }}>Loading book...</p>;
   if (!book) return <p style={{ padding: "20px" }}>Book not found</p>;
 
-  // Render stars
+  // ⭐ Render 10 stars (1–10)
   const renderStars = () => {
     const stars = [];
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 10; i++) {
       stars.push(
         <span
           key={i}

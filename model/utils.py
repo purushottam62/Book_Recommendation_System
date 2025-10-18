@@ -96,7 +96,7 @@ def record_interaction(user_id, book_isbn, rating=None, implicit=False):
     Record a user-book interaction.
     
     Rules:
-    - If implicit=True (like a view), assign neutral rating (3.0)
+    - If implicit=True (like a view), assign neutral rating (7.0)
       but only if no explicit rating exists yet.
     - If explicit rating provided, always overwrite any implicit one.
     - Prevent overwriting explicit ratings with implicit ones.
@@ -108,7 +108,7 @@ def record_interaction(user_id, book_isbn, rating=None, implicit=False):
     existing = Rating.objects.filter(user=user, book=book).first()
     if implicit:
         if existing is None:
-            Rating.objects.create(user=user, book=book, rating=3.14)
+            Rating.objects.create(user=user, book=book, rating=7.14)
             msg = f"Implicit (view) rating recorded for {book_isbn}"
         else:
             msg = f"Skipped implicit rating — explicit already exists for {book_isbn}"

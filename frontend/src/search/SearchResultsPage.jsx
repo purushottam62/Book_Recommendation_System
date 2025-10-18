@@ -44,7 +44,7 @@ const SearchResultsPage = () => {
               );
               const userRating = resRating.data.rating;
               ratingsData[book.book_isbn] =
-                userRating !== 3.14 ? userRating : 0;
+                userRating !== 7.14 ? userRating : 0;
             } catch (err) {
               ratingsData[book.book_isbn] = 0;
             }
@@ -84,7 +84,7 @@ const SearchResultsPage = () => {
   const renderStars = (isbn) => {
     const stars = [];
     const rating = ratings[isbn] || 0;
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 10; i++) {
       stars.push(
         <span
           key={i}
