@@ -1,5 +1,20 @@
 from rest_framework import permissions
 
+
+class IsRegisteredAdmin(permissions.BasePermission):
+    """
+    Allows access only to certain RegisteredUsers (manual admin check).
+    """
+
+    def has_permission(self, request, view):
+        # Must be authenticated first
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Either check a custom boolean field OR a list of admin usernames
+        admin_usernames = {"admin", "superuser"}   # customize
+        return request.user.username in admin_usernames
+
 class BookPermission(permissions.BasePermission):
     """
     Custom permission for the Book model:

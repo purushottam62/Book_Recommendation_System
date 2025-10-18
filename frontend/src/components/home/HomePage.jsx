@@ -16,15 +16,7 @@ const HomePage = () => {
       }
 
       // 1. Load model
-      try {
-        await axios.post(
-          "/api/model/load/",
-          {},
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-      } catch (err) {
-        console.error("Error loading model:", err);
-      }
+      
 
       // 2. Fetch recommendations
       try {
@@ -32,6 +24,7 @@ const HomePage = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
         setBooks(res.data);
+        console.log("Recommended books:", res.data);
       } catch (err) {
         console.error("Error fetching recommendations:", err);
         if (err.response?.status === 401) {

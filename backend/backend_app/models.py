@@ -10,6 +10,8 @@ class RegisteredUser(models.Model):
     full_name = models.CharField(max_length=150, blank=True)
     date_joined = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
+    is_admin = models.BooleanField(default=False)
+
 
     @property
     def is_authenticated(self):
@@ -20,11 +22,6 @@ class RegisteredUser(models.Model):
     def is_anonymous(self):
         """Always return False. Required by Django auth system."""
         return False
-    
-    @property
-    def is_staff(self):
-        """Always return False. Required by Django auth system."""
-        return True
 
     def __str__(self):
         return self.username

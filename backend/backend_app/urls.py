@@ -13,7 +13,6 @@ urlpatterns = [
 
     path('api/model/record/', views.api_record_interaction, name='record_interaction'),
     path('api/model/recommend/<str:user_id>/', views.api_recommend, name='recommend'),
-    path('api/model/load/', views.api_load_model, name='load_model'),
     path('api/auth/me/', views.MeAPIView.as_view(), name='me'),
 
     path('api/', include(router.urls)),

@@ -1,48 +1,82 @@
-import os, sys
+import os
+import sys
 import torch
+import threading
 from collections import defaultdict, deque
 
 # --------------------------------------------------------
-# Set up Django environment so this file can access models
+# Django setup
 # --------------------------------------------------------
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../backend')))
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../backend"))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backend.settings")
 
 import django
-django.setup()
+if not django.apps.apps.ready:
+    django.setup()
+
 
 from backend_app.models import User, Book, Rating
 from django.db import transaction
 
-# ----------------------------------------------------------------
-# GLOBALS (cache-like structures, not DB)
-# ----------------------------------------------------------------
-user_sequences = defaultdict(lambda: deque(maxlen=10))  # keep short-term interactions
-book_index = {}
-index_book = {}
-user_index = {}
-index_user = {}
-trained_model = None
+# --------------------------------------------------------
+# GLOBAL STATE
+# --------------------------------------------------------
+_GLOBAL_STATE = {
+    "trained_model": None,
+    "book_index": {},
+    "index_book": {},
+    "user_index": {},
+    "index_user": {},
+}
+
+user_sequences = defaultdict(lambda: deque(maxlen=10))
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-# ----------------------------------------------------------------
-# MODEL + MAPPING INITIALIZATION
-# ----------------------------------------------------------------
+# --------------------------------------------------------
+# MODEL LOADING FUNCTIONS
+# --------------------------------------------------------
 def load_model(model_path, model_class):
-    """Load trained STAMP model into memory."""
-    global trained_model
-    trained_model = model_class()
-    trained_model.load_state_dict(torch.load(model_path, map_location=device))
-    trained_model.to(device)
-    trained_model.eval()
-    print("✅ STAMP model loaded successfully.")
+    """Safely load trained STAMP model, even if DB size changed."""
+    load_mappings_from_db()
+    num_items = len(_GLOBAL_STATE.get("book_index", {})) or Book.objects.count()
+
+    if num_items == 0:
+        raise ValueError("❌ No books found in DB — cannot initialize STAMP model.")
+
+    # Initialize new model with DB-based num_items
+    model = model_class(num_items=num_items, embed_dim=64)
+    state_dict = torch.load(model_path, map_location=device)
+    model_dict = model.state_dict()
+
+    # --- Handle shape mismatches gracefully ---
+    for key in list(state_dict.keys()):
+        if key in model_dict and state_dict[key].shape != model_dict[key].shape:
+            print(f"⚠️ Resizing layer: {key}")
+            pretrained_tensor = state_dict[key]
+            target_tensor = model_dict[key]
+
+            # Resize smaller/larger tensors safely
+            min_shape = tuple(min(a, b) for a, b in zip(pretrained_tensor.shape, target_tensor.shape))
+            target_tensor[:min_shape[0], ...] = pretrained_tensor[:min_shape[0], ...]
+            state_dict[key] = target_tensor
+
+    # --- Load safe state dict ---
+    model.load_state_dict(state_dict, strict=False)
+    model.to(device)
+    model.eval()
+
+    _GLOBAL_STATE["trained_model"] = model
+
+    print(f"✅ STAMP model loaded successfully from: {model_path}")
+    print(f"   → num_items (DB) = {num_items}, embed_dim = 64")
+
 
 
 def load_mappings_from_db():
     """Create index mappings directly from SQL tables."""
-    global book_index, index_book, user_index, index_user
-
     books = Book.objects.all().values_list("book_isbn", flat=True)
     users = User.objects.all().values_list("user_id", flat=True)
 
@@ -51,53 +85,49 @@ def load_mappings_from_db():
     user_index = {uid: idx for idx, uid in enumerate(users)}
     index_user = {idx: uid for uid, idx in user_index.items()}
 
+    _GLOBAL_STATE.update({
+        "book_index": book_index,
+        "index_book": index_book,
+        "user_index": user_index,
+        "index_user": index_user,
+    })
+
     print(f"✅ Loaded mappings → {len(users)} users, {len(books)} books")
 
-
-# ----------------------------------------------------------------
+# --------------------------------------------------------
 # INTERACTION FUNCTIONS
-# ----------------------------------------------------------------
+# --------------------------------------------------------
 def record_interaction(user_id, book_isbn, rating=None):
-    """
-    Record a user-book interaction.
-    Automatically updates both Django DB and in-memory cache.
-    """
-    # Ensure user and book exist in DB
+    """Record user-book interaction in DB and cache."""
     user, _ = User.objects.get_or_create(user_id=user_id)
     book, _ = Book.objects.get_or_create(book_isbn=book_isbn)
 
-    # Save interaction to DB
     if rating is not None:
         Rating.objects.update_or_create(user=user, book=book, defaults={"rating": rating})
 
-    # Update in-memory sequence
     user_sequences[user_id].append(book_isbn)
     return {"status": "ok", "message": f"Interaction recorded for user {user_id}"}
 
 
 def recommend_books(user_id, top_k=5):
-    """Generate top-k book recommendations for given user."""
+    """Generate top-k recommendations for a given user."""
+    trained_model = _GLOBAL_STATE.get("trained_model")
     if trained_model is None:
-        raise ValueError("Model not loaded. Call load_model first.")
+        raise ValueError("Model not loaded. Please check auto-load configuration.")
 
-    # Cold start case
+    book_index = _GLOBAL_STATE["book_index"]
+    index_book = _GLOBAL_STATE["index_book"]
+
     seq = list(user_sequences[user_id])
     if not seq:
         books = list(Book.objects.values_list("book_isbn", flat=True))
-        if not books:
-            return {"user_id": user_id, "recommendations": []}
-        return {
-            "user_id": user_id,
-            "recommendations": list(set(books))[:top_k]
-        }
+        return {"user_id": user_id, "recommendations": books[:top_k]}
 
-    # Convert seq to tensor indices
     seq_idx = [book_index[b] for b in seq if b in book_index]
     if not seq_idx:
         return {"user_id": user_id, "recommendations": []}
 
     seq_tensor = torch.tensor(seq_idx).unsqueeze(0).to(device)
-
     with torch.no_grad():
         scores = trained_model(seq_tensor)
         top_indices = torch.topk(scores, top_k).indices.squeeze(0).tolist()
@@ -105,24 +135,17 @@ def recommend_books(user_id, top_k=5):
     rec_books = [index_book[i] for i in top_indices if i in index_book]
     return {"user_id": user_id, "recommendations": rec_books}
 
-
-# ----------------------------------------------------------------
-# NEW ENTRIES HANDLERS
-# ----------------------------------------------------------------
+# --------------------------------------------------------
+# HANDLERS
+# --------------------------------------------------------
 @transaction.atomic
 def handle_new_user(user_id, age=None, location=None):
-    """Add new user to DB + initialize cache sequence."""
     user, created = User.objects.get_or_create(
         user_id=user_id,
-        defaults={"age": age, "location": location}
+        defaults={"age": age, "location": location},
     )
     user_sequences[user_id] = deque(maxlen=10)
-    if created:
-        # add to mapping
-        new_idx = len(user_index)
-        user_index[user_id] = new_idx
-        index_user[new_idx] = user_id
-    return {"status": "ok", "message": f"New user {user_id} {'created' if created else 'already exists'}."}
+    return {"status": "ok", "message": f"User {user_id} {'created' if created else 'exists'}."}
 
 
 @transaction.atomic
@@ -139,6 +162,48 @@ def handle_new_book(book_isbn, book_title=None, book_author=None,
             "image_url_s": image_url_s or "",
             "image_url_m": image_url_m or "",
             "image_url_l": image_url_l or "",
-        }
+        },
     )
-    return {"status": "ok", "message": f"Book {book_isbn} {'added' if created else 'already exists'}."}
+    return {"status": "ok", "message": f"Book {book_isbn} {'added' if created else 'exists'}."}
+
+# --------------------------------------------------------
+# THREADED AUTO-LOAD FUNCTION
+# --------------------------------------------------------
+def _auto_load_stamp_model_once():
+    """Auto-load the STAMP model after Django setup (runs once safely)."""
+    try:
+        try:
+            from model.stamp_model import STAMP
+        except ModuleNotFoundError:
+            from stamp_model import STAMP
+
+        # Detect absolute path regardless of where server runs
+        possible_paths = [
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "stamp.pth")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../model/stamp.pth")),
+            os.path.abspath(os.path.join(os.getcwd(), "model/stamp.pth")),
+        ]
+
+        MODEL_PATH = next((p for p in possible_paths if os.path.exists(p)), None)
+
+        print("🔍 Checking possible STAMP model paths:")
+        for p in possible_paths:
+            print("   -", p)
+
+        if MODEL_PATH is None:
+            print("⚠️ No valid stamp.pth found in any known path!")
+            return
+
+        print(f"✅ Found model file at: {MODEL_PATH}")
+
+        load_model(MODEL_PATH, STAMP)
+        load_mappings_from_db()
+        print("🚀 Auto-loaded STAMP model + DB mappings at startup!")
+
+    except Exception as e:
+        import traceback
+        print("❌ STAMP auto-load failed!")
+        print(traceback.format_exc())
+
+# Run in a background thread to avoid race conditions
+threading.Thread(target=_auto_load_stamp_model_once, daemon=True).start()

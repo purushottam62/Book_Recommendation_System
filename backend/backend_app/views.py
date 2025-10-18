@@ -14,6 +14,7 @@ from .serializers import (
 )
 from .utils_auth import generate_tokens_for_registered_user
 from rest_framework.permissions import IsAuthenticated
+from .permissions import IsRegisteredAdmin
 
 
 MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../model'))
@@ -128,21 +129,7 @@ def api_recommend(request, user_id):
     res = recommend_books(str(user_id), top_k)
     return Response(res)
 
-
-@api_view(['POST'])
-@permission_classes([permissions.IsAdminUser])
-def api_load_model(request):
-    """Load trained STAMP model"""
-    # Either take from request, or use the default model path
-    model_path = request.data.get('model_path') or os.path.join(MODEL_DIR, 'stamp.pth')
-
-    try:
-        load_model(model_path, STAMP)
-        load_mappings_from_db()
-        return Response({"message": f"✅ Model loaded successfully from {model_path}"})
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+ 
 class MeAPIView(APIView):
     """
     Returns the currently authenticated user's profile details.
