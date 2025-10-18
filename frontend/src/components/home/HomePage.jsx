@@ -9,13 +9,24 @@ const HomePage = () => {
   const userId = localStorage.getItem("user_id"); // store this when user logs in
   console.log("access token in homepage:", token);
   useEffect(() => {
-    // If user not logged in → redirect
-    if (userId == null || token == null) {
-      navigate("/login");
-      return;
-    }
+    const init = async () => {
+      if (!userId || !token) {
+        navigate("/login");
+        return;
+      }
 
-    const fetchRecommendations = async () => {
+      // 1. Load model
+      try {
+        await axios.post(
+          "/api/model/load/",
+          {},
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } catch (err) {
+        console.error("Error loading model:", err);
+      }
+
+      // 2. Fetch recommendations
       try {
         const res = await axios.get(`/api/model/recommend/${userId}/?top_k=5`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -24,7 +35,6 @@ const HomePage = () => {
       } catch (err) {
         console.error("Error fetching recommendations:", err);
         if (err.response?.status === 401) {
-          // Token expired or invalid → clear and force login
           localStorage.removeItem("access");
           localStorage.removeItem("refresh");
           navigate("/login");
@@ -32,7 +42,7 @@ const HomePage = () => {
       }
     };
 
-    fetchRecommendations();
+    init();
   }, [navigate, token, userId]);
 
   return (
