@@ -91,16 +91,35 @@ def load_mappings_from_db():
 # --------------------------------------------------------
 # INTERACTION FUNCTIONS
 # --------------------------------------------------------
-def record_interaction(user_id, book_isbn, rating=None):
-    """Record user-book interaction in DB and cache."""
+def record_interaction(user_id, book_isbn, rating=None, implicit=False):
+    """
+    Record a user-book interaction.
+    
+    Rules:
+    - If implicit=True (like a view), assign neutral rating (3.0)
+      but only if no explicit rating exists yet.
+    - If explicit rating provided, always overwrite any implicit one.
+    - Prevent overwriting explicit ratings with implicit ones.
+    """
     user, _ = User.objects.get_or_create(user_id=user_id)
     book, _ = Book.objects.get_or_create(book_isbn=book_isbn)
 
-    if rating is not None:
-        Rating.objects.update_or_create(user=user, book=book, defaults={"rating": rating})
-
+    # Check if an explicit rating already exists for this user-book pair
+    existing = Rating.objects.filter(user=user, book=book).first()
+    if implicit:
+        if existing is None:
+            Rating.objects.create(user=user, book=book, rating=3.14)
+            msg = f"Implicit (view) rating recorded for {book_isbn}"
+        else:
+            msg = f"Skipped implicit rating — explicit already exists for {book_isbn}"
+    else:
+        Rating.objects.update_or_create(
+            user=user, book=book,
+            defaults={"rating": rating}
+        )
+        msg = f"Explicit rating {rating} recorded for {book_isbn}"
     user_sequences[user_id].append(book_isbn)
-    return {"status": "ok", "message": f"Interaction recorded for user {user_id}"}
+    return {"status": "ok", "message": msg}
 
 
 def recommend_books(user_id, top_k=5):

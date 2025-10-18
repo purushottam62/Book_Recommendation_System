@@ -114,6 +114,33 @@ class BookViewSet(viewsets.ModelViewSet):
         books = Book.objects.filter(book_isbn__in=isbns)
         serializer = self.get_serializer(books, many=True)
         return Response(serializer.data)
+    @action(detail=False, methods=['get'], url_path=r'search/(?P<query>[^/.]+)')
+    def search_books(self, request, query):
+        """
+        GET /api/books/search/<query>/
+        Example: /api/books/search/harry%20potter%20rowling/
+        Returns ISBNs ranked by match relevance.
+        """
+        tokens = [token.strip().lower() for token in query.split() if token.strip()]
+        if not tokens:
+            return Response({"error": "Empty search query."}, status=400)
+        book_scores = {}
+
+        for book in Book.objects.only('book_isbn', 'book_title', 'book_author'):
+            text = f"{book.book_title or ''} {book.book_author or ''}".lower()
+            score = sum(token in text for token in tokens)
+            if score > 0:
+                book_scores[book.book_isbn] = score
+
+        ranked_isbns = sorted(book_scores.keys(), key=lambda x: -book_scores[x])
+        top_n = int(request.GET.get('limit', 50))
+        ranked_isbns = ranked_isbns[:top_n]
+
+        return Response({
+            "query": query,
+            "matches": ranked_isbns,
+            "total_found": len(ranked_isbns)
+        })
 
 class RatingViewSet(viewsets.ModelViewSet):
     queryset = Rating.objects.all()
@@ -127,14 +154,12 @@ class RatingViewSet(viewsets.ModelViewSet):
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def api_record_interaction(request):
-    """Record a user-book interaction"""
     user_id = request.data.get('user_id')
     book_isbn = request.data.get('book_isbn')
     rating = request.data.get('rating', None)
-    res = record_interaction(user_id, book_isbn, rating)
+    implicit = request.data.get('implicit', False)
+    res = record_interaction(user_id, book_isbn, rating, implicit)
     return Response(res)
-
-
 
 
 @api_view(['GET'])
