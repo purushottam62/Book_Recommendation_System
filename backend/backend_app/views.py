@@ -12,7 +12,7 @@ from .serializers import (
     RegisteredUserSerializer, LoginSerializer,
     UserSerializer, BookSerializer, RatingSerializer
 )
-from utils_auth import generate_tokens_for_registered_user
+from .utils_auth import generate_tokens_for_registered_user
 
 
 MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../model'))

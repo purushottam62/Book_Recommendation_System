@@ -93,7 +93,6 @@ __pycache__/
 *.joblib
 *.ckpt
 *.pt
-*.pth
 *.npy
 *.npz
 
