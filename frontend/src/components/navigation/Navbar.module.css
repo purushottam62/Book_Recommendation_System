@@ -50,3 +50,47 @@
   cursor: pointer;
   font-weight: bold;
 }
+/* Navbar.css (add these) */
+
+.profileWrapper {
+  position: relative; /* relative to contain absolute dropdown */
+}
+
+.profileCard {
+  position: absolute; /* overlay on top of navbar */
+  top: 100%; /* just below the button */
+  right: 0;
+  background: white;
+  color: #2563eb;
+  padding: 12px 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  width: 220px;
+  z-index: 1000; /* make sure it overlays everything */
+}
+
+.profileCard p {
+  margin: 6px 0;
+}
+
+.logoutBtn {
+  margin-top: 10px;
+  width: 100%;
+  background: #ef4444;
+  color: white;
+  border: none;
+  padding: 6px 0;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.profileCard::before {
+  content: "";
+  position: absolute;
+  top: -6px; /* position arrow above card */
+  right: 16px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent transparent white transparent;
+}
