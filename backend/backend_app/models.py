@@ -23,6 +23,11 @@ class RegisteredUser(models.Model):
         """Always return False. Required by Django auth system."""
         return False
 
+    @property
+    def is_staff(self):
+        """Always return False. Required by Django auth system."""
+        return True
+
     def __str__(self):
         return self.username
 

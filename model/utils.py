@@ -45,25 +45,19 @@ def load_model(model_path, model_class):
 
     if num_items == 0:
         raise ValueError("❌ No books found in DB — cannot initialize STAMP model.")
-
-    # Initialize new model with DB-based num_items
     model = model_class(num_items=num_items, embed_dim=64)
     state_dict = torch.load(model_path, map_location=device)
     model_dict = model.state_dict()
-
-    # --- Handle shape mismatches gracefully ---
     for key in list(state_dict.keys()):
         if key in model_dict and state_dict[key].shape != model_dict[key].shape:
             print(f"⚠️ Resizing layer: {key}")
             pretrained_tensor = state_dict[key]
             target_tensor = model_dict[key]
 
-            # Resize smaller/larger tensors safely
             min_shape = tuple(min(a, b) for a, b in zip(pretrained_tensor.shape, target_tensor.shape))
             target_tensor[:min_shape[0], ...] = pretrained_tensor[:min_shape[0], ...]
             state_dict[key] = target_tensor
 
-    # --- Load safe state dict ---
     model.load_state_dict(state_dict, strict=False)
     model.to(device)
     model.eval()
