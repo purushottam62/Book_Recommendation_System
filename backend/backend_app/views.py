@@ -5,12 +5,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.hashers import check_password
 
 from .models import RegisteredUser, User, Book, Rating
 from .serializers import (
     RegisteredUserSerializer, LoginSerializer,
     UserSerializer, BookSerializer, RatingSerializer
 )
+from utils_auth import generate_tokens_for_registered_user
+
 
 MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../model'))
 if MODEL_DIR not in sys.path:
@@ -25,6 +28,7 @@ try:
 except ModuleNotFoundError:
     # If it's inside utils.py
     from utils import STAMP
+from .permissions import BookPermission
 
 # -------------------------
 # AUTH VIEWS
@@ -57,13 +61,10 @@ class LoginAPIView(APIView):
         if not check_password(password, ru.password):
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        refresh = RefreshToken.for_user(ru)
-        return Response({
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-            "user_id": ru.id
-        })
-        
+        # Generate tokens manually
+        tokens = generate_tokens_for_registered_user(ru)
+        return Response(tokens, status=status.HTTP_200_OK)
+
 
 # -------------------------
 # CRUD: ML Models
@@ -77,7 +78,11 @@ class UserViewSet(viewsets.ModelViewSet):
 class BookViewSet(viewsets.ModelViewSet):
     queryset = Book.objects.all()
     serializer_class = BookSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [BookPermission]
+
+    def destroy(self, request, *args, **kwargs):
+        return Response({"error": "❌ Deletion of books is not allowed."},
+                        status=status.HTTP_403_FORBIDDEN)
 
 
 class RatingViewSet(viewsets.ModelViewSet):
