@@ -11,6 +11,16 @@ class RegisteredUser(models.Model):
     date_joined = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
 
+    @property
+    def is_authenticated(self):
+        """Always return True. Required by Django auth system."""
+        return True
+
+    @property
+    def is_anonymous(self):
+        """Always return False. Required by Django auth system."""
+        return False
+
     def __str__(self):
         return self.username
 
