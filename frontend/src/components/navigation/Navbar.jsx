@@ -5,13 +5,21 @@ import styles from "./Navbar.module.css";
 const Navbar = () => {
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+  const token = localStorage.getItem("access"); // check your stored access token
 
   const handleSearch = (e) => {
     e.preventDefault();
     if (query.trim()) {
-      // send query to backend (later we'll connect API)
       console.log("Searching for:", query);
+      // TODO: connect search API later
     }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("access");
+    localStorage.removeItem("refresh");
+    localStorage.removeItem("user_id");
+    navigate("/login");
   };
 
   return (
@@ -34,15 +42,34 @@ const Navbar = () => {
       </form>
 
       <div className={styles.links}>
-        <button onClick={() => navigate("/login")} className={styles.linkBtn}>
-          Login
-        </button>
-        <button
-          onClick={() => navigate("/register")}
-          className={styles.linkBtn}
-        >
-          Register
-        </button>
+        {token ? (
+          <>
+            <button
+              onClick={() => navigate("/profile")}
+              className={styles.linkBtn}
+            >
+              Profile
+            </button>
+            <button onClick={handleLogout} className={styles.linkBtn}>
+              Logout
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => navigate("/login")}
+              className={styles.linkBtn}
+            >
+              Login
+            </button>
+            <button
+              onClick={() => navigate("/register")}
+              className={styles.linkBtn}
+            >
+              Register
+            </button>
+          </>
+        )}
       </div>
     </nav>
   );

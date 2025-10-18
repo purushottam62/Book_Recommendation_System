@@ -4,10 +4,11 @@ import axios from "axios";
 
 const HomePage = () => {
   const [books, setBooks] = useState([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const token = localStorage.getItem("access");
-  const userId = localStorage.getItem("user_id"); // store this when user logs in
-  console.log("access token in homepage:", token);
+  const userId = localStorage.getItem("user_id"); // stored on login
+
   useEffect(() => {
     const init = async () => {
       if (!userId || !token) {
@@ -15,16 +16,30 @@ const HomePage = () => {
         return;
       }
 
-      // 1. Load model
-      
-
-      // 2. Fetch recommendations
       try {
+        // 1️⃣ Fetch recommended ISBNs
         const res = await axios.get(`/api/model/recommend/${userId}/?top_k=5`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setBooks(res.data);
-        console.log("Recommended books:", res.data);
+
+        const recommendedIsbns = res.data.recommendations || [];
+        console.log("Recommended ISBNs:", recommendedIsbns);
+
+        if (recommendedIsbns.length === 0) {
+          setBooks([]);
+          setLoading(false);
+          return;
+        }
+
+        // 2️⃣ Fetch full book details in bulk
+        const bulkRes = await axios.post(
+          "/api/books/bulk/",
+          { isbns: recommendedIsbns },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        setBooks(bulkRes.data);
+        console.log("Full recommended books:", bulkRes.data);
       } catch (err) {
         console.error("Error fetching recommendations:", err);
         if (err.response?.status === 401) {
@@ -32,11 +47,15 @@ const HomePage = () => {
           localStorage.removeItem("refresh");
           navigate("/login");
         }
+      } finally {
+        setLoading(false);
       }
     };
 
     init();
   }, [navigate, token, userId]);
+
+  if (loading) return <p style={{ padding: "20px" }}>Loading recommendations...</p>;
 
   return (
     <div style={{ padding: "20px" }}>
@@ -55,7 +74,7 @@ const HomePage = () => {
               }}
             >
               <img
-                src={book.image_url_m || book.image_url_l}
+                src={book.image_url_m || book.image_url_l || "https://via.placeholder.com/150"}
                 alt={book.book_title}
                 style={{ width: "100%", borderRadius: "8px" }}
               />

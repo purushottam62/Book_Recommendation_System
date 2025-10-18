@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.hashers import check_password
+from rest_framework.decorators import action
 
 from .models import RegisteredUser, User, Book, Rating
 from .serializers import (
@@ -95,11 +96,24 @@ class BookViewSet(viewsets.ModelViewSet):
     queryset = Book.objects.all()
     serializer_class = BookSerializer
     permission_classes = [BookPermission]
-
+    lookup_field = 'book_isbn'
     def destroy(self, request, *args, **kwargs):
         return Response({"error": "❌ Deletion of books is not allowed."},
                         status=status.HTTP_403_FORBIDDEN)
-
+    @action(detail=False, methods=['post'], url_path='bulk')
+    def bulk_fetch(self, request):
+        """
+        POST /api/books/bulk/
+        Body: {"isbns": ["0000913154","0001010565", ...]}
+        Returns full book objects.
+        """
+        isbns = request.data.get('isbns', [])
+        if not isbns:
+            return Response({"error": "No ISBNs provided."}, status=400)
+        
+        books = Book.objects.filter(book_isbn__in=isbns)
+        serializer = self.get_serializer(books, many=True)
+        return Response(serializer.data)
 
 class RatingViewSet(viewsets.ModelViewSet):
     queryset = Rating.objects.all()
@@ -119,6 +133,8 @@ def api_record_interaction(request):
     rating = request.data.get('rating', None)
     res = record_interaction(user_id, book_isbn, rating)
     return Response(res)
+
+
 
 
 @api_view(['GET'])
