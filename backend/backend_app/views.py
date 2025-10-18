@@ -170,6 +170,40 @@ def api_recommend(request, user_id):
     res = recommend_books(str(user_id), top_k)
     return Response(res)
 
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def api_get_rating(request):
+    """
+    GET /api/model/rating/?user_id=<user_id>&book_isbn=<isbn>
+    Returns rating info for a given user-book pair.
+    If not found, returns rating=0.
+    """
+    user_id = request.GET.get('user_id')
+    book_isbn = request.GET.get('book_isbn')
+
+    if not user_id or not book_isbn:
+        return Response({"error": "user_id and book_isbn are required."}, status=400)
+
+    try:
+        user = User.objects.get(user_id=user_id)
+        book = Book.objects.get(book_isbn=book_isbn)
+        rating = Rating.objects.filter(user=user, book=book).first()
+        if rating:
+            data = {
+                "user_id": user_id,
+                "book_isbn": book_isbn,
+                "rating": rating.rating
+            }
+        else:
+            data = {
+                "user_id": user_id,
+                "book_isbn": book_isbn,
+                "rating": 0.0
+            }
+        return Response(data)
+    except (User.DoesNotExist, Book.DoesNotExist):
+        return Response({"user_id": user_id, "book_isbn": book_isbn, "rating": 0.0})
+
  
 class MeAPIView(APIView):
     """
