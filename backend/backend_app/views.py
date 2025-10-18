@@ -121,7 +121,7 @@ def api_record_interaction(request):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+# @permission_classes([permissions.IsAuthenticated])
 def api_recommend(request, user_id):
     """Get top-k recommendations"""
     top_k = int(request.GET.get('top_k', 5))

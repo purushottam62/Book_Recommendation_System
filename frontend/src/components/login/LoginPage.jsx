@@ -1,31 +1,59 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
+import axios from "axios";
+// import { BASE_URL } from "../api";
 import styles from "./LoginPage.module.css";
 
 const LoginPage = () => {
-  const [userId, setUserId] = useState("");
+  const [form, setForm] = useState({ username: "", password: "" });
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleChange = (e) =>
+    setForm({ ...form, [e.target.name]: e.target.value });
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    localStorage.setItem("user_id", userId);
-    console.log("User logged in with ID:", userId);
-    navigate("/");
+    try {
+      const res = await axios.post(`/api/auth/login/`, form);
+      console.log("response is ", res);
+      console.log("usr id is", res.data.user_id);
+      localStorage.setItem("access", res.data.access);
+      localStorage.setItem("refresh", res.data.refresh);
+      localStorage.setItem("user_id", res.data.user_id);
+      alert("✅ Logged in successfully!");
+      navigate("/");
+    } catch (err) {
+      setError(err.response?.data?.detail || "Invalid credentials.");
+    }
   };
 
   return (
     <div className={styles.container}>
       <h2>Login</h2>
+      {error && <p className={styles.error}>{error}</p>}
       <form onSubmit={handleSubmit} className={styles.form}>
         <input
           type="text"
-          placeholder="Enter your User ID"
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
+          name="username"
+          placeholder="Username"
+          value={form.username}
+          onChange={handleChange}
+          required
+        />
+        <input
+          type="password"
+          name="password"
+          placeholder="Password"
+          value={form.password}
+          onChange={handleChange}
           required
         />
         <button type="submit">Login</button>
       </form>
+      <p>
+        Don’t have an account? <Link to="/register">Register</Link>
+      </p>
     </div>
   );
 };
