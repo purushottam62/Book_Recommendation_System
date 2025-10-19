@@ -8,6 +8,7 @@ from stamp_model import STAMP, SessionDataset, collate_fn, NegativeSampler, devi
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import os
+import numpy as np
 # ---------------------------
 # Training loop
 # ---------------------------
