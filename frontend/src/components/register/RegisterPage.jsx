@@ -1,18 +1,18 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-// import { BASE_URL } from "../api";
-import styles from "./RegisterPage.module.css";
+import { useNavigate } from "react-router-dom";
 
 const RegisterPage = () => {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
     username: "",
     email: "",
     password: "",
-    full_name: "",
+    date_of_birth: "",
+    city: "",
+    state: "",
+    country: "",
   });
-  const [error, setError] = useState("");
-  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -21,19 +21,22 @@ const RegisterPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`/api/auth/register/`, form);
-      alert("✅ Registered successfully!");
+      await axios.post("/api/ml_users/", form);
+      alert("Registration successful! Please login.");
       navigate("/login");
     } catch (err) {
-      setError(err.response?.data?.detail || "Registration failed.");
+      console.error("Error registering:", err);
+      alert("Registration failed.");
     }
   };
 
   return (
-    <div className={styles.container}>
+    <div style={{ maxWidth: "400px", margin: "40px auto" }}>
       <h2>Register</h2>
-      {error && <p className={styles.error}>{error}</p>}
-      <form onSubmit={handleSubmit} className={styles.form}>
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+      >
         <input
           type="text"
           name="username"
@@ -59,17 +62,51 @@ const RegisterPage = () => {
           required
         />
         <input
-          type="text"
-          name="full_name"
-          placeholder="Full Name"
-          value={form.full_name}
+          type="date"
+          name="date_of_birth"
+          placeholder="Date of Birth"
+          value={form.date_of_birth}
           onChange={handleChange}
+          required
         />
-        <button type="submit">Register</button>
+        <input
+          type="text"
+          name="city"
+          placeholder="City"
+          value={form.city}
+          onChange={handleChange}
+          required
+        />
+        <input
+          type="text"
+          name="state"
+          placeholder="State"
+          value={form.state}
+          onChange={handleChange}
+          required
+        />
+        <input
+          type="text"
+          name="country"
+          placeholder="Country"
+          value={form.country}
+          onChange={handleChange}
+          required
+        />
+        <button
+          type="submit"
+          style={{
+            marginTop: "10px",
+            padding: "10px",
+            background: "#2563eb",
+            color: "white",
+            border: "none",
+            borderRadius: "5px",
+          }}
+        >
+          Register
+        </button>
       </form>
-      <p>
-        Already have an account? <Link to="/login">Login</Link>
-      </p>
     </div>
   );
 };
