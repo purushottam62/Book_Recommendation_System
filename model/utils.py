@@ -195,9 +195,9 @@ def _auto_load_stamp_model_once():
             from stamp_model import STAMP
 
         possible_paths = [
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "stamp.pth")),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "../model/stamp.pth")),
-            os.path.abspath(os.path.join(os.getcwd(), "model/stamp.pth")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "stamp.pt")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../model/stamp.pt")),
+            os.path.abspath(os.path.join(os.getcwd(), "model/stamp.pt")),
         ]
 
         print("🔍 Checking possible STAMP model paths:")

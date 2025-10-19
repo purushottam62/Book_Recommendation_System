@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from stamp_model import STAMP, SessionDataset, collate_fn, NegativeSampler, device
 import pandas as pd
 from sklearn.model_selection import train_test_split
+import os
 # ---------------------------
 # Training loop
 # ---------------------------
@@ -40,14 +41,22 @@ def train_epoch(model, dataloader, optimizer, neg_sampler, n_neg=100, grad_clip=
 # ---------------------------
 # Evaluation (Precision@K)
 # ---------------------------
-def precision_at_k(model, sessions_for_eval, item_count, K=20, batch_size=512, max_seq_len=50):
+
+def precision_at_k(model, sessions_for_eval, item_count, K=20, batch_size=512, max_seq_len=50, n_neg=500):
+    """
+    Approximate Precision@K using sampled negatives.
+    For each positive target, sample n_neg negatives (instead of all items).
+    """
     model.eval()
+    hits, tot = 0, 0
+    device = next(model.parameters()).device
+
+    # Create list of (prefix, target)
     pairs = []
     for s in sessions_for_eval:
         for t in range(1, len(s)):
             pairs.append((s[:t][-max_seq_len:], s[t]))
 
-    hits, tot = 0, 0
     with torch.no_grad():
         for i in range(0, len(pairs), batch_size):
             batch = pairs[i:i+batch_size]
@@ -56,13 +65,22 @@ def precision_at_k(model, sessions_for_eval, item_count, K=20, batch_size=512, m
             max_len = max(len(s) for s in seqs)
             padded = [[0]*(max_len - len(s)) + s for s in seqs]
             seq_tensor = torch.LongTensor(padded).to(device)
-            all_items = torch.arange(item_count, device=device).unsqueeze(0).expand(len(batch), item_count)
-            logits = model(seq_tensor, all_items)
+
+            B = len(batch)
+            # Sample negatives per batch
+            negs = np.random.randint(1, item_count, size=(B, n_neg))
+            pos_col = np.array(targets).reshape(-1, 1)
+            candidates = np.concatenate([pos_col, negs], axis=1)
+            candidates = torch.LongTensor(candidates).to(device)
+
+            logits = model(seq_tensor, candidates)  # (B, 1 + n_neg)
             topk = torch.topk(logits, K, dim=1).indices.cpu().numpy()
+
             for r, tgt in enumerate(targets):
                 tot += 1
-                if tgt in topk[r]:
+                if 0 in topk[r]:  # positive is always at index 0
                     hits += 1
+
     return hits / tot if tot > 0 else 0.0
 
 
@@ -70,7 +88,7 @@ def precision_at_k(model, sessions_for_eval, item_count, K=20, batch_size=512, m
 # Entry point
 # ---------------------------
 if __name__ == "__main__":
-    ratings_path = "../clean_data/ratings.csv"  
+    ratings_path = "./../clean_data/ratings.csv"
     print(f"📂 Loading ratings from: {ratings_path}")
     ratings = pd.read_csv(ratings_path)
     ratings = ratings[["user_id", "book_isbn", "book_rating"]]
@@ -105,7 +123,7 @@ if __name__ == "__main__":
     model = STAMP(num_items=num_items, embed_dim=100, pad_idx=pad_idx, dropout=0.2).to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.005, weight_decay=1e-6)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.9)
-    n_epochs = 30
+    n_epochs = 100
     n_neg = 100
 
     for epoch in range(1, n_epochs + 1):
@@ -118,8 +136,12 @@ if __name__ == "__main__":
             prec20 = precision_at_k(model, sessions_val[:2000], num_items, K=20)
             print(f"  Val Prec@5: {prec5:.4f} | Prec@20: {prec20:.4f}")
 
+        save_path = "stamp.pt"
+        if os.path.exists(save_path):
+            os.remove(save_path)  # delete old checkpoint to ensure overwrite
+
         torch.save({
             "epoch": epoch,
             "model_state": model.state_dict(),
             "opt_state": optimizer.state_dict()
-        }, f"stamp_epoch{epoch}.pt")
+        }, save_path)

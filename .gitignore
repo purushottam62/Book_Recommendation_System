@@ -92,8 +92,8 @@ __pycache__/
 *.hdf5
 *.joblib
 *.ckpt
-*.pt
 *.npy
+*.pth
 *.npz
 
 # Model artifacts / datasets
