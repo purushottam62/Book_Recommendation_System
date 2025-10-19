@@ -43,7 +43,7 @@ class RegisterAPIView(APIView):
         serializer = RegisteredUserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        handle_new_user(str(user.id))  # Add ML user
+        handle_new_user(user.id)  # Add ML user
         return Response({"message": "Registered successfully", "user_id": user.id}, status=status.HTTP_201_CREATED)
 
 

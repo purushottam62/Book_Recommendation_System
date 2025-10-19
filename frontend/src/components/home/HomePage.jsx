@@ -23,6 +23,7 @@ const HomePage = () => {
         const res = await axios.get(`/api/model/recommend/${userId}/?top_k=20`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        console.log("Recommended ISBNs:", res.data);
 
         const recommendedIsbns = res.data.recommendations || [];
         if (recommendedIsbns.length === 0) {

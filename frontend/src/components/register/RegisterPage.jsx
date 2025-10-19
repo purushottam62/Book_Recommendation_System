@@ -6,9 +6,10 @@ const RegisterPage = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     username: "",
+    full_name: "",
     email: "",
     password: "",
-    date_of_birth: "",
+    dob: "",      // ✅ backend expects 'dob', not 'date_of_birth'
     city: "",
     state: "",
     country: "",
@@ -18,17 +19,34 @@ const RegisterPage = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post("/api/ml_users/", form);
-      alert("Registration successful! Please login.");
-      navigate("/login");
-    } catch (err) {
-      console.error("Error registering:", err);
-      alert("Registration failed.");
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  try {
+    await axios.post("/api/auth/register/", form, {
+      headers: { "Content-Type": "application/json" },
+    });
+    alert("✅ Registration successful! Please login.");
+    navigate("/login");
+  } catch (err) {
+    // Capture and format server-side validation errors
+    const data = err.response?.data;
+    console.error("❌ Error registering:", data);
+
+    if (data) {
+      // If backend returned field-wise validation errors
+      let msg = "";
+      for (const key in data) {
+        const value = Array.isArray(data[key]) ? data[key][0] : data[key];
+        msg += `${key}: ${value}\n`;
+      }
+      alert("⚠️ Registration failed:\n" + msg);
+    } else {
+      // Fallback for network or unexpected errors
+      alert("⚠️ Registration failed. Please check your inputs or try again.");
     }
-  };
+  }
+};
+
 
   return (
     <div style={{ maxWidth: "400px", margin: "40px auto" }}>
@@ -42,6 +60,14 @@ const RegisterPage = () => {
           name="username"
           placeholder="Username"
           value={form.username}
+          onChange={handleChange}
+          required
+        />
+        <input
+          type="text"
+          name="full_name"
+          placeholder="Full Name"
+          value={form.full_name}
           onChange={handleChange}
           required
         />
@@ -63,9 +89,9 @@ const RegisterPage = () => {
         />
         <input
           type="date"
-          name="date_of_birth"
+          name="dob"     // ✅ Must match Django field name
           placeholder="Date of Birth"
-          value={form.date_of_birth}
+          value={form.dob}
           onChange={handleChange}
           required
         />

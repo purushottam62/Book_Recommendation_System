@@ -4,6 +4,9 @@ import torch
 import threading
 from collections import defaultdict, deque
 from django.db import transaction
+import re
+from difflib import SequenceMatcher
+from django.db.models import Q
 
 # --------------------------------------------------------
 # Django setup
@@ -88,40 +91,148 @@ def load_mappings_from_db():
     })
 
     print(f"✅ Loaded mappings → {len(users)} users, {len(books)} books")
+
+import re
+import random
+from django.db.models import Q
+from backend_app.models import Book
+
+def _get_similar_books_by_title(base_books, limit=500):
+    """
+    Improved version:
+    - Extracts significant keywords (4+ letters, not common stopwords)
+    - Matches against title, author, or publisher
+    - Ensures results share at least one keyword in the title
+    - Adds small randomness for diversity
+    """
+    if not base_books:
+        return list(Book.objects.order_by("?")[:limit])
+
+    # --- Step 1: Build keyword set ---
+    stopwords = {
+        "from", "with", "this", "that", "your", "have", "will", "book", "books",
+        "into", "edition", "press", "about", "their", "these", "those", "which",
+        "after", "before", "under", "over", "then", "been", "were", "also",
+        "there", "where", "when", "how", "what", "why", "into", "once", "some",
+        "more", "most", "other", "such", "many", "each", "than", "them", "they",
+        "might", "must", "shall", "could", "would", "very", "make", "made",
+        "work", "works", "series", "paperback", "hardcover", "edition", "press"
+    }
+
+    keywords = set()
+    for book in base_books:
+        text = f"{book.book_title or ''} {book.book_author or ''} {book.publisher or ''}".lower()
+        tokens = re.findall(r"[a-zA-Z]{4,}", text)
+        keywords.update(t for t in tokens if t not in stopwords)
+
+    keywords = list(keywords)[:25]  # limit to avoid giant queries
+
+    if not keywords:
+        return list(Book.objects.order_by("?")[:limit])
+
+    # --- Step 2: Query by keyword overlap ---
+    query = Q()
+    for kw in keywords:
+        query |= (
+            Q(book_title__icontains=kw)
+            | Q(book_author__icontains=kw)
+            | Q(publisher__icontains=kw)
+        )
+
+    similar_qs = (
+        Book.objects.filter(query)
+        .distinct()
+        .exclude(book_isbn__in=[b.book_isbn for b in base_books])
+    )
+
+    # --- Step 3: Rank by title keyword overlap count ---
+    matched = []
+    for b in similar_qs[:2000]:  # check up to 2000 for efficiency
+        title = (b.book_title or "").lower()
+        score = sum(kw in title for kw in keywords)
+        if score > 0:
+            matched.append((score, b))
+
+    # --- Step 4: Sort and add diversity ---
+    matched.sort(key=lambda x: x[0], reverse=True)
+    books = [b for _, b in matched[: int(limit * 0.8)]]
+
+    # add 20% random books for novelty
+    random_books = list(Book.objects.order_by("?")[: int(limit * 0.2)])
+    books.extend(random_books)
+
+    # --- Step 5: Deduplicate and trim ---
+    seen = set()
+    final_books = []
+    for b in books:
+        if b.book_isbn not in seen:
+            seen.add(b.book_isbn)
+            final_books.append(b)
+        if len(final_books) >= limit:
+            break
+
+    print(f"[DEBUG] Found {len(final_books)} similar books (keywords={len(keywords)})")
+    return final_books
+
 # --------------------------------------------------------
 # INTERACTION FUNCTIONS
 # --------------------------------------------------------
 def record_interaction(user_id, book_isbn, rating=None, implicit=False):
     """
-    Record a user-book interaction safely (thread-safe + consistent per-user sequence).
-    - Implicit=True means a neutral 'view' event.
-    - Explicit rating always overrides implicit.
-    - User sequences stored separately (no cross-contamination).
+    Record a user-book interaction.
+    - If implicit=True (like a view), assign neutral rating (7.0)
+      but only if no explicit rating exists yet.
+    - If explicit rating provided, always overwrite any implicit one.
+    - Prevent overwriting explicit ratings with implicit ones.
     """
+    from backend_app.models import Book, User, Rating
+
+    # --- Resolve user and book ---
     user, _ = User.objects.get_or_create(user_id=user_id)
     book, _ = Book.objects.get_or_create(book_isbn=book_isbn)
 
+    # ✅ Debug print: show full context of incoming request
+    print("\n[DEBUG] record_interaction() called:")
+    print(f"   → user_id   = {user_id}")
+    print(f"   → book_isbn = {book_isbn}")
+    print(f"   → book_name = {book.book_title or '(unknown title)'}")
+    print(f"   → rating    = {rating}")
+    print(f"   → implicit  = {implicit}")
+    print("-" * 70)
+
+    # --- Logic for storing rating ---
     existing = Rating.objects.filter(user=user, book=book).first()
     if implicit:
         if existing is None:
             Rating.objects.create(user=user, book=book, rating=7.14)
-            msg = f"Implicit (view) rating recorded for {book_isbn}"
+            msg = f"Implicit (view) rating recorded for {book.book_title or book_isbn}"
         else:
-            msg = f"Skipped implicit rating — explicit already exists for {book_isbn}"
+            msg = f"Skipped implicit rating — explicit already exists for {book.book_title or book_isbn}"
     else:
-        Rating.objects.update_or_create(user=user, book=book, defaults={"rating": rating})
-        msg = f"Explicit rating {rating} recorded for {book_isbn}"
+        Rating.objects.update_or_create(
+            user=user, book=book,
+            defaults={"rating": rating}
+        )
+        msg = f"Explicit rating {rating} recorded for {book.book_title or book_isbn}"
 
-    # Thread-safe session append
-    with _sequence_locks[user_id]:
-        _user_sequences[user_id].append(book_isbn)
+    # ✅ Debug print: confirm user’s total ratings in DB
+    count = Rating.objects.filter(user=user).count()
+    print(f"[DEBUG] User {user_id} now has {count} rating(s) in the database.")
+    print("=" * 70)
+
+    # --- Update in-memory sequence ---
+    _user_sequences[user_id].append(book_isbn)
 
     return {"status": "ok", "message": msg}
 
+
 def recommend_books(user_id, top_k=5):
     """
-    Generate top-k recommendations for a given user.
-    Returns list of book_isbn recommendations.
+    Hybrid recommend:
+    1. Use user's recent rated books (fallback to DB if no session).
+    2. Filter candidates by keyword match.
+    3. Rank using STAMP.
+    4. DO NOT modify user's true session.
     """
     model = _GLOBAL_STATE.get("trained_model")
     if model is None:
@@ -130,29 +241,72 @@ def recommend_books(user_id, top_k=5):
     book_index = _GLOBAL_STATE["book_index"]
     index_book = _GLOBAL_STATE["index_book"]
 
-    # Retrieve this user's sequence safely
+    # --- Retrieve or reload user session ---
     with _sequence_locks[user_id]:
         seq = list(_user_sequences[user_id])
 
     if not seq:
+        print(f"[DEBUG] No session for {user_id}, loading from DB...")
+        from backend_app.models import Rating
+        last_rated = (
+            Rating.objects.filter(user__user_id=user_id)
+            .order_by("-id")
+            .values_list("book__book_isbn", flat=True)[:5]
+        )
+        seq = list(last_rated)
+        if seq:
+            with _sequence_locks[user_id]:
+                _user_sequences[user_id].extend(seq)
+
+    if not seq:
+        print(f"[DEBUG] No ratings for user {user_id}, returning fallback.")
         books = list(Book.objects.values_list("book_isbn", flat=True)[:top_k])
         return {"user_id": user_id, "recommendations": books}
 
+    # --- Print last books ---
+    last_books = list(Book.objects.filter(book_isbn__in=seq[-5:]))
+    print(f"\n[DEBUG] Last {len(last_books)} books for user {user_id}:")
+    for b in last_books:
+        print(f"   → {b.book_title} ({b.book_isbn})")
+
+    # --- Encode sequence ---
     seq_idx = [book_index[b] for b in seq if b in book_index]
     if not seq_idx:
         return {"user_id": user_id, "recommendations": []}
 
     seq_tensor = torch.tensor([seq_idx], dtype=torch.long).to(_device)
 
+    # --- Candidates ---
+    candidate_books = _get_similar_books_by_title(last_books, limit=100)
+    candidate_isbns = [b.book_isbn for b in candidate_books if b.book_isbn in book_index]
+
+    if not candidate_isbns:
+        print(f"[DEBUG] No similar books found for user {user_id}.")
+        return {"user_id": user_id, "recommendations": []}
+
+    candidate_idxs = [book_index[b] for b in candidate_isbns]
+    candidate_tensor = torch.tensor([candidate_idxs], dtype=torch.long).to(_device)
+
+    # --- Score ---
     with torch.no_grad():
-        scores = model(seq_tensor)  # full item scores
-        scores = torch.softmax(scores, dim=-1)  # normalize
+        scores = model(seq_tensor, candidate_tensor)
+        scores = torch.softmax(scores, dim=-1)
         top_indices = torch.topk(scores, top_k, dim=1).indices.squeeze(0).tolist()
 
-    rec_books = [index_book[i] for i in top_indices if i in index_book]
+    rec_books = [candidate_isbns[i] for i in top_indices if i < len(candidate_isbns)]
+
+    # --- Print recommendations ---
+    rec_objs = list(Book.objects.filter(book_isbn__in=rec_books))
+    print(f"\n[DEBUG] Recommended {len(rec_books)} books for user {user_id}:")
+    for b in rec_objs:
+        print(f"   ★ {b.book_title} ({b.book_isbn})")
+
+    # ✅ DO NOT modify session here!
+    print(f"[DEBUG] User {user_id} session remains: {list(_user_sequences[user_id])}")
+
     return {"user_id": user_id, "recommendations": rec_books}
 
-# --------------------------------------------------------
+# -----------------------------------------------
 # HANDLERS
 # --------------------------------------------------------
 @transaction.atomic
