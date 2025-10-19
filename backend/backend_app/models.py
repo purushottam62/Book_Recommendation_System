@@ -48,7 +48,7 @@ class RegisteredUser(models.Model):
 
     @property
     def is_staff(self):
-        return self.is_admin
+        return True
 
     def __str__(self):
         return self.username
