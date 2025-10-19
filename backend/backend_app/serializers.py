@@ -8,12 +8,20 @@ from django.contrib.auth.hashers import make_password, check_password
 # ----------------------------
 class RegisteredUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    age = serializers.ReadOnlyField() 
+    location = serializers.ReadOnlyField() 
 
     class Meta:
         model = RegisteredUser
-        fields = ['id', 'username', 'email', 'password', 'full_name', 'date_joined']
+        fields = [
+            'id', 'username', 'email', 'password', 'full_name',
+            'dob', 'city', 'state', 'country',
+            'age', 'location', 'date_joined'
+        ]
+        read_only_fields = ['id', 'date_joined', 'age', 'location']
 
     def create(self, validated_data):
+        """Hash password before saving user."""
         validated_data['password'] = make_password(validated_data['password'])
         return super().create(validated_data)
 

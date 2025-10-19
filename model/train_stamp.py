@@ -1,62 +1,125 @@
-import pandas as pd
+# train_stamp.py
 import torch
-from torch.utils.data import Dataset, DataLoader
-from stamp_model import STAMP
 import torch.nn as nn
 import torch.optim as optim
+from collections import Counter
+from torch.utils.data import DataLoader
+from stamp_model import STAMP, SessionDataset, collate_fn, NegativeSampler, device
+import pandas as pd
+from sklearn.model_selection import train_test_split
+# ---------------------------
+# Training loop
+# ---------------------------
+def train_epoch(model, dataloader, optimizer, neg_sampler, n_neg=100, grad_clip=5.0):
+    model.train()
+    total_loss = 0.0
+    bce = nn.BCEWithLogitsLoss()
+    for seqs, lengths, targets in dataloader:
+        seqs, targets = seqs.to(device), targets.to(device)
+        B = seqs.size(0)
 
-class BookSessionDataset(Dataset):
-    def __init__(self, seq_file, book_to_idx):
-        df = pd.read_pickle(seq_file)
-        self.sessions = df
-        self.book_to_idx = book_to_idx
+        negs = torch.LongTensor(neg_sampler.sample(B, n_neg)).to(device)
+        pos_col = targets.view(B, 1)
+        candidates = torch.cat([pos_col, negs], dim=1)
 
-    def __len__(self):
-        return len(self.sessions)
+        logits = model(seqs, candidates)
+        labels = torch.zeros_like(logits, dtype=torch.float, device=device)
+        labels[:, 0] = 1.0
 
-    def __getitem__(self, idx):
-        seq = [self.book_to_idx[b] for b in self.sessions.iloc[idx]["input_sequence"]]
-        target = self.book_to_idx[self.sessions.iloc[idx]["target"]]
-        return torch.tensor(seq), torch.tensor(target)
+        loss = bce(logits, labels)
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        optimizer.step()
 
-def collate_fn(batch):
-    sequences, targets = zip(*batch)
-    max_len = max(len(seq) for seq in sequences)
-    padded = [torch.cat([seq, torch.zeros(max_len - len(seq), dtype=torch.long)]) for seq in sequences]
-    return torch.stack(padded), torch.tensor(targets)
+        total_loss += loss.item() * B
 
-def train_stamp():
-    # --- Step 1: Load data ---
-    ratings = pd.read_csv("./../clean_data/ratings.csv")
-    books = ratings["book_isbn"].unique()
-    book_to_idx = {b: i for i, b in enumerate(books)}
-    idx_to_book = {i: b for b, i in book_to_idx.items()}
+    return total_loss / len(dataloader.dataset)
 
-    dataset = BookSessionDataset("./../clean_data/sequences.pkl", book_to_idx)
-    loader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=collate_fn)
 
-    # --- Step 2: Model, loss, optimizer ---
-    model = STAMP(num_items=len(book_to_idx))
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+# ---------------------------
+# Evaluation (Precision@K)
+# ---------------------------
+def precision_at_k(model, sessions_for_eval, item_count, K=20, batch_size=512, max_seq_len=50):
+    model.eval()
+    pairs = []
+    for s in sessions_for_eval:
+        for t in range(1, len(s)):
+            pairs.append((s[:t][-max_seq_len:], s[t]))
 
-    # --- Step 3: Train ---
-    for epoch in range(5):
-        model.train()
-        total_loss = 0
-        for sequences, targets in loader:
-            optimizer.zero_grad()
-            outputs = model(sequences)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        print(f"Epoch {epoch+1}: loss = {total_loss / len(loader):.4f}")
+    hits, tot = 0, 0
+    with torch.no_grad():
+        for i in range(0, len(pairs), batch_size):
+            batch = pairs[i:i+batch_size]
+            seqs = [b[0] for b in batch]
+            targets = [b[1] for b in batch]
+            max_len = max(len(s) for s in seqs)
+            padded = [[0]*(max_len - len(s)) + s for s in seqs]
+            seq_tensor = torch.LongTensor(padded).to(device)
+            all_items = torch.arange(item_count, device=device).unsqueeze(0).expand(len(batch), item_count)
+            logits = model(seq_tensor, all_items)
+            topk = torch.topk(logits, K, dim=1).indices.cpu().numpy()
+            for r, tgt in enumerate(targets):
+                tot += 1
+                if tgt in topk[r]:
+                    hits += 1
+    return hits / tot if tot > 0 else 0.0
 
-    # --- Step 4: Save ---
-    torch.save(model.state_dict(), "./stamp.pth")
-    print("✅ Training complete. Model saved to ./stamp.pth")
 
+# ---------------------------
+# Entry point
+# ---------------------------
 if __name__ == "__main__":
-    train_stamp()
+    ratings_path = "../clean_data/ratings.csv"  
+    print(f"📂 Loading ratings from: {ratings_path}")
+    ratings = pd.read_csv(ratings_path)
+    ratings = ratings[["user_id", "book_isbn", "book_rating"]]
+    sessions_by_user = ratings.groupby("user_id")["book_isbn"].apply(list).tolist()
+    sessions = [s for s in sessions_by_user if len(s) > 1]
+    print(f"✅ Created {len(sessions)} sessions (users with >=2 books rated)")
+    sessions_train, sessions_val = train_test_split(sessions, test_size=0.1, random_state=42)
 
+    # Build ISBN → integer ID mapping
+    unique_books = sorted({isbn for session in sessions for isbn in session})
+    book2id = {isbn: i+1 for i, isbn in enumerate(unique_books)}  # reserve 0 for padding
+    id2book = {i+1: isbn for i, isbn in enumerate(unique_books)}
+
+    # Convert sessions from ISBN to integer IDs
+    sessions_train = [[book2id[b] for b in s if b in book2id] for s in sessions_train]
+    sessions_val = [[book2id[b] for b in s if b in book2id] for s in sessions_val]
+
+    num_items = len(book2id) + 1 
+    pad_idx = 0
+
+    print(f"🔢 num_items = {num_items}")
+
+    train_dataset = SessionDataset(sessions_train)
+    val_dataset = SessionDataset(sessions_val)
+    train_loader = DataLoader(
+        train_dataset, batch_size=512, shuffle=True,
+        collate_fn=lambda b: collate_fn(b, pad_idx=pad_idx, max_seq_len=50)
+    )
+
+    item_freq = Counter([item for s in sessions_train for item in s])
+    neg_sampler = NegativeSampler(num_items=num_items, item_freq_counter=item_freq, power=0.75)
+    model = STAMP(num_items=num_items, embed_dim=100, pad_idx=pad_idx, dropout=0.2).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.005, weight_decay=1e-6)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.9)
+    n_epochs = 30
+    n_neg = 100
+
+    for epoch in range(1, n_epochs + 1):
+        train_loss = train_epoch(model, train_loader, optimizer, neg_sampler, n_neg=n_neg)
+        scheduler.step()
+        print(f"Epoch {epoch} | Train Loss: {train_loss:.4f}")
+
+        if epoch % 2 == 0:
+            prec5 = precision_at_k(model, sessions_val[:2000], num_items, K=5)
+            prec20 = precision_at_k(model, sessions_val[:2000], num_items, K=20)
+            print(f"  Val Prec@5: {prec5:.4f} | Prec@20: {prec20:.4f}")
+
+        torch.save({
+            "epoch": epoch,
+            "model_state": model.state_dict(),
+            "opt_state": optimizer.state_dict()
+        }, f"stamp_epoch{epoch}.pt")
