@@ -52,6 +52,13 @@ Unlike traditional recommendation models that rely solely on user history or ite
 ### 🧩 Why STAMP for Books?
 In a book recommendation context, user interests often vary between genres, authors, or moods within a single session.  
 STAMP’s attention mechanism helps capture these subtle, evolving preferences — recommending the next book that best matches the **user’s immediate curiosity** while respecting their **overall taste**.
+#
+---
+
+### 🎥 Find Presentation Here
+[View on Canva](https://www.canva.com/design/DAG2anvGKac/2TJaV0EQOJblUQ5jcyiYZg/edit?utm_content=DAG2anvGKac&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton)
+
+---
 
 
 ## 🧩 Folder Structure
