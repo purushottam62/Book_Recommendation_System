@@ -54,7 +54,7 @@ def load_model(model_path, model_class):
     try:
     	checkpoint = torch.load(model_path, map_location=_device)
     except Exception as e:
-    	print("⚠️ Retrying with weights_only=False due to PyTorch 2.6+ security change...")
+    	print("Retrying with weights_only=False due to PyTorch 2.6+ security change...")
     	checkpoint = torch.load(model_path, map_location=_device, weights_only=False)
 
 
@@ -62,7 +62,7 @@ def load_model(model_path, model_class):
     model_dict = model.state_dict()
     for key, value in checkpoint.items():
         if key in model_dict and value.shape != model_dict[key].shape:
-            print(f"⚠️ Resizing {key}: {value.shape} → {model_dict[key].shape}")
+            print(f"Resizing {key}: {value.shape} → {model_dict[key].shape}")
             min_shape = tuple(min(a, b) for a, b in zip(value.shape, model_dict[key].shape))
             model_dict[key][:min_shape[0], ...] = value[:min_shape[0], ...]
         else:
@@ -73,7 +73,7 @@ def load_model(model_path, model_class):
     model.eval()
 
     _GLOBAL_STATE["trained_model"] = model
-    print(f"✅ STAMP model loaded successfully from: {model_path}")
+    print(f"STAMP model loaded successfully from: {model_path}")
     print(f"   → num_items = {num_items}, embed_dim = 64")
 
 
@@ -95,7 +95,7 @@ def load_mappings_from_db():
         "index_user": index_user,
     })
 
-    print(f"✅ Loaded mappings → {len(users)} users, {len(books)} books")
+    print(f"Loaded mappings → {len(users)} users, {len(books)} books")
 
 import re
 import random
