@@ -51,7 +51,12 @@ def load_model(model_path, model_class):
 
     # Initialize model
     model = model_class(num_items=num_items, embed_dim=64)
-    checkpoint = torch.load(model_path, map_location=_device)
+    try:
+    	checkpoint = torch.load(model_path, map_location=_device)
+    except Exception as e:
+    	print("⚠️ Retrying with weights_only=False due to PyTorch 2.6+ security change...")
+    	checkpoint = torch.load(model_path, map_location=_device, weights_only=False)
+
 
     # Handle mismatched layer shapes
     model_dict = model.state_dict()
